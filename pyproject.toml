@@ -1,0 +1,94 @@
+[project]
+name = "multi-agent-orchestration-platform"
+version = "0.1.0"
+description = "Enterprise multi-agent collaboration automation platform for tech media editorial teams"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Your Name", email = "you@example.com" },
+]
+keywords = ["multi-agent", "langgraph", "fastapi", "celery", "llm", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+
+dependencies = [
+    # ---- Web Framework (fully async) ----
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sse-starlette>=2.1.0",
+
+    # ---- Agent Orchestration ----
+    "langgraph>=0.2.50",
+    "langgraph-checkpoint-sqlite>=2.0.1",
+    "langchain-core>=0.3.0",
+    # Using OpenAI-compatible interface to call DashScope (Qwen)
+    "langchain-openai>=0.2.0",
+    "openai>=1.50.0",
+
+    # ---- Database / ORM ----
+    "sqlalchemy[asyncio]>=2.0.35",
+    "aiomysql>=0.2.0",
+    "aiosqlite>=0.20.0",
+    "pymysql>=1.1.1",
+    "cryptography>=43.0.0",
+
+    # ---- Async Task Queue ----
+    "celery>=5.4.0",
+    "redis>=5.0.8",
+
+    # ---- Resilience ----
+    "tenacity>=9.0.0",
+
+    # ---- Config & Validation ----
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "python-dotenv>=1.0.1",
+
+    # ---- HTTP Client ----
+    "httpx>=0.27.0",
+
+    # ---- Utilities ----
+    "orjson>=3.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-username/multi-agent-orchestration-platform"
+Repository = "https://github.com/your-username/multi-agent-orchestration-platform"
+Issues = "https://github.com/your-username/multi-agent-orchestration-platform/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ---- Ruff (linter + formatter) ----
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ---- Celery ----
+[tool.celery]
+# 让 celery 能从 pyproject.toml 读取配置（可选）

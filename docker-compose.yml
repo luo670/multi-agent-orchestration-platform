@@ -1,0 +1,143 @@
+# ============================================================
+# Multi-Agent Orchestration Platform - Docker Compose
+#
+# Services:
+#   redis    — message broker (Celery) + Pub/Sub (SSE) + rate limiter
+#   mysql    — production database (dev can use SQLite inside api/celery)
+#   api      — FastAPI web gateway
+#   celery   — Celery worker that runs the LangGraph pipeline
+#   flower   — (optional) Celery monitoring dashboard
+#
+# Quick start:
+#   1. cp .env.example .env  &&  fill in DASHSCOPE_API_KEY
+#   2. docker compose up --build
+#   3. open http://localhost:8000/docs
+#
+# All secrets come from the .env file (loaded via env_file). The image
+# never bakes credentials in.
+# ============================================================
+
+services:
+  # ----------------------------------------------------------
+  # Redis — broker + pub/sub + rate-limit lock backend
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: maop-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # MySQL — production database
+  # Skip this service for pure-SQLite local dev (set DATABASE_URL
+  # to sqlite in .env and don't start mysql).
+  # ----------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: maop-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-agent_platform}
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ----------------------------------------------------------
+  # FastAPI — web gateway
+  # ----------------------------------------------------------
+  api:
+    build: .
+    container_name: maop-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override DATABASE_URL + REDIS_URL to point at compose services.
+      DATABASE_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-root}@mysql:3306/${MYSQL_DATABASE:-agent_platform}?charset=utf8mb4
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    command: >
+      uv run uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 2
+
+  # ----------------------------------------------------------
+  # Celery worker — runs the LangGraph pipeline
+  # ----------------------------------------------------------
+  celery:
+    build: .
+    container_name: maop-celery
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-root}@mysql:3306/${MYSQL_DATABASE:-agent_platform}?charset=utf8mb4
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    # One worker process, concurrency 4 (prefork). Scale by adding replicas
+    # or running `docker compose up --scale celery=N`.
+    command: >
+      uv run celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=4
+      --hostname=worker@%h
+
+  # ----------------------------------------------------------
+  # Flower — Celery monitoring (optional, dev convenience)
+  # ----------------------------------------------------------
+  flower:
+    build: .
+    container_name: maop-flower
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: >
+      uv run celery -A app.celery_app flower
+      --port=5555
+
+volumes:
+  redis-data:
+  mysql-data:
